@@ -24,13 +24,15 @@ def install_lumapi():
 
 
 def get_pip_main():
+
     import pip
     # check if pip version is new:
-    if int(pip.__version__.split('.')[0]) > 9:
-        from pip._internal import main
+    if hasattr(pip, 'main'):
+        return pip.main
     else:
         from pip import main
-    return main
+        return main
+        return pip._internal.main.main
 
 
 def install_numpy():

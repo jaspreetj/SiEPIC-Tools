@@ -1329,8 +1329,10 @@ def spice_netlist_export(self, verbose=False, opt_in_selection_text=[]):
 
     # create individual sources:
     for c in components:
-        for p in c.pins:
+        for idx,p in enumerate(c.pins):
             if p.type == _globals.PIN_TYPES.ELECTRICAL:
+                if idx > 0:  
+                    if p.pin_name == c.pins[idx - 1].pin_name: continue  # Skip pins that have exactly the same name (assume they are internally connected in the component)
                 NetName = " " + c.component + '_' + str(c.idx) + '_' + p.pin_name
                 electricalIO_pins += NetName
                 DCsources += "N" + \
@@ -1373,17 +1375,38 @@ def spice_netlist_export(self, verbose=False, opt_in_selection_text=[]):
     text_subckt += '.param MC_non_uniform=99 \n'
 
     for c in components:
-        # optical nets: must be ordered electrical, optical IO, then optical
-        nets_str = ''
+        # Check pins to see if explicitly ordered numerically - requires first character in pin name to be a number (Stefan Preble, RIT)
+        explicit_ordering = False
         for p in c.pins:
-            if p.type == _globals.PIN_TYPES.ELECTRICAL:
-                nets_str += " " + c.component + '_' + str(c.idx) + '_' + p.pin_name
-        for p in c.pins:
-            if p.type == _globals.PIN_TYPES.OPTICALIO:
-                nets_str += " " + str(p.net.idx)
-        for p in c.pins:
-            if p.type == _globals.PIN_TYPES.OPTICAL:
-                nets_str += " N$" + str(p.net.idx)
+            pinname1 = p.pin_name[0]
+            if pinname1.isdigit():
+                explicit_ordering = True
+            else:
+                explicit_ordering = False  # all pins must be numbered
+                break
+               
+        nets_str = ''        
+        if explicit_ordering:   # Order the pins numerically (Stefan Preble, RIT)
+            for idx, p in enumerate(c.pins):
+                if idx > 0:  
+                    if p.pin_name == c.pins[idx - 1].pin_name: continue  # Skip pins that have exactly the same name (assume they are internally connected in the component)
+                if p.type == _globals.PIN_TYPES.ELECTRICAL:
+                    nets_str += " " + c.component + '_' + str(c.idx) + '_' + p.pin_name
+                if p.type == _globals.PIN_TYPES.OPTICALIO:
+                    nets_str += " " + str(p.net.idx)    
+                if p.type == _globals.PIN_TYPES.OPTICAL:
+                    nets_str += " N$" + str(p.net.idx)
+        else:
+            # optical nets: must be ordered electrical, optical IO, then optical
+            for p in c.pins:
+                if p.type == _globals.PIN_TYPES.ELECTRICAL:
+                    nets_str += " " + c.component + '_' + str(c.idx) + '_' + p.pin_name
+            for p in c.pins:
+                if p.type == _globals.PIN_TYPES.OPTICALIO:
+                    nets_str += " " + str(p.net.idx)
+            for p in c.pins:
+                if p.type == _globals.PIN_TYPES.OPTICAL:
+                    nets_str += " N$" + str(p.net.idx)
 
         trans = KLayoutInterconnectRotFlip[(c.trans.angle, c.trans.is_mirror())]
 

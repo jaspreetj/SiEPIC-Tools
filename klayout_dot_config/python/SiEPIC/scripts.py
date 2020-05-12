@@ -33,6 +33,10 @@ import pya
 
 
 def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose=False, select_waveguides=False):
+#    import time
+#    time0 = time.perf_counter()
+#    verbose=True
+
     from . import _globals
     from .utils import select_paths, get_layout_variables
     TECHNOLOGY, lv, ly, top_cell = get_layout_variables()
@@ -40,7 +44,8 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
         cell = top_cell
 
     if verbose:
-        print("SiEPIC.scripts path_to_waveguide()" )
+        print("SiEPIC.scripts path_to_waveguide(); start")
+#        print("SiEPIC.scripts path_to_waveguide(); start; time = %s" % (time.perf_counter()-time0))
 
     if lv_commit:
         lv.transaction("Path to Waveguide")
@@ -54,7 +59,8 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
         print("SiEPIC.scripts path_to_waveguide(): params = %s" % params)
     selected_paths = select_paths(TECHNOLOGY['Waveguide'], cell, verbose=verbose)
     if verbose:
-        print("SiEPIC.scripts path_to_waveguide(): selected_paths = %s" % selected_paths)
+        print("SiEPIC.scripts path_to_waveguide(): selected_paths = %s" % (selected_paths))
+#        print("SiEPIC.scripts path_to_waveguide(): selected_paths = %s; time = %s" % (selected_paths, time.perf_counter()-time0))
     selection = []
 
     warning = pya.QMessageBox()
@@ -65,6 +71,10 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
             "Warning: Cannot make Waveguides - No Path objects selected or found in the layout.")
         if(pya.QMessageBox_StandardButton(warning.exec_()) == pya.QMessageBox.Cancel):
             return
+            
+    # can this be done once instead of each time?  Moved here, by Lukas C, 2020/05/04
+    p=cell.find_pins()            
+
     for obj in selected_paths:
         path = obj.shape.path
         path.unique_points()
@@ -87,12 +97,24 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
             if(pya.QMessageBox_StandardButton(warning.exec_()) == pya.QMessageBox.Cancel):
                 return
 
-        path.snap(cell.find_pins())
+        # a slow function - needs fixing:
+#        p=cell.find_pins()
+#        if verbose:
+#          print("SiEPIC.scripts path_to_waveguide(); cell.find_pins(); time = %s" % (time.perf_counter()-time0))
+
+        path.snap(p)
+#        if verbose:
+#          print("SiEPIC.scripts path_to_waveguide(); path.snap(...); time = %s" % (time.perf_counter()-time0))
+
         Dpath = path.to_dtype(TECHNOLOGY['dbu'])
         if ('DevRec' not in [wg['layer'] for wg in params['wgs']]):
             width_devrec = max([wg['width'] for wg in params['wgs']]) + _globals.WG_DEVREC_SPACE * 2
             params['wgs'].append({'width': width_devrec, 'layer': 'DevRec', 'offset': 0.0})
-        try:
+        
+        # added 2 new parameters: CML and model to support multiple WG models
+        pcell = 0
+        if 'CML' in params.keys() and 'model' in params.keys():
+          try:
             pcell = ly.create_cell("Waveguide", TECHNOLOGY['technology_name'], {"path": Dpath,
                                                                                 "radius": params['radius'],
                                                                                 "width": params['width'],
@@ -100,11 +122,31 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
                                                                                 "bezier": params['bezier'],
                                                                                 "layers": [wg['layer'] for wg in params['wgs']],
                                                                                 "widths": [wg['width'] for wg in params['wgs']],
-                                                                                "offsets": [wg['offset'] for wg in params['wgs']]})
+                                                                                "offsets": [wg['offset'] for wg in params['wgs']],
+                                                                                "CML": params['CML'],
+                                                                                "model": params['model']})
             print("SiEPIC.scripts.path_to_waveguide(): Waveguide from %s, %s" %
-                  (TECHNOLOGY['technology_name'], pcell))
-        except:
-            pass
+                  (TECHNOLOGY['technology_name'], pcell))   
+#            print("SiEPIC.scripts.path_to_waveguide(): Waveguide from %s, %s; time = %s" %
+#                  (TECHNOLOGY['technology_name'], pcell, time.perf_counter()-time0))   
+          except:
+              pass
+        if not pcell:
+            try:
+                pcell = ly.create_cell("Waveguide", TECHNOLOGY['technology_name'], {"path": Dpath,
+                                                                                    "radius": params['radius'],
+                                                                                    "width": params['width'],
+                                                                                    "adiab": params['adiabatic'],
+                                                                                    "bezier": params['bezier'],
+                                                                                    "layers": [wg['layer'] for wg in params['wgs']],
+                                                                                    "widths": [wg['width'] for wg in params['wgs']],
+                                                                                    "offsets": [wg['offset'] for wg in params['wgs']]})
+                print("SiEPIC.scripts.path_to_waveguide(): Waveguide from %s, %s" %
+                  (TECHNOLOGY['technology_name'], pcell))   
+#                print("SiEPIC.scripts.path_to_waveguide(): Waveguide from %s, %s; time = %s" %
+#                  (TECHNOLOGY['technology_name'], pcell, time.perf_counter()-time0))   
+            except:
+                pass
         if not pcell:
             try:
                 pcell = ly.create_cell("Waveguide", "SiEPIC General", {"path": Dpath,
@@ -133,6 +175,10 @@ def path_to_waveguide(params=None, cell=None, lv_commit=True, GUI=False, verbose
         lv.object_selection = selection
     if lv_commit:
         lv.commit()
+
+    if verbose:
+        print("SiEPIC.scripts path_to_waveguide(); done" )
+#        print("SiEPIC.scripts path_to_waveguide(); done; time = %s" % (time.perf_counter()-time0))
 
 '''
 convert a KLayout ROUND_PATH, which was used to make a waveguide
@@ -330,12 +376,12 @@ def waveguide_to_path(cell=None):
 
 def waveguide_length():
 
-    from .utils import get_layout_variables
+    from .utils import get_layout_variables, select_waveguides
     TECHNOLOGY, lv, ly, cell = get_layout_variables()
     import SiEPIC.utils
 
-    selection = lv.object_selection
-    if len(selection) == 1 and selection[0].inst().is_pcell() and "Waveguide" in selection[0].inst().cell.basic_name():
+    selection = select_waveguides(cell)
+    if len(selection) == 1:
         cell = selection[0].inst().cell
         area = SiEPIC.utils.advance_iterator(cell.each_shape(
             cell.layout().layer(TECHNOLOGY['Waveguide']))).polygon.area()
@@ -358,10 +404,10 @@ def waveguide_length_diff():
     import SiEPIC
     import time, os, fnmatch
     from SiEPIC.utils import get_technology, xml_to_dict
-    os.chdir('C:\\Users\\root\\KLayout\\python\\SiEPIC\\lumerical')
+
     # calculate length difference
-    selection = lv.object_selection
-    if len(selection) == 2 and selection[0].inst().is_pcell() and "Waveguide" in selection[0].inst().cell.basic_name() and selection[1].inst().is_pcell() and "Waveguide" in selection[1].inst().cell.basic_name():
+    selection = select_waveguides(cell)
+    if len(selection) == 2:
         cell = selection[0].inst().cell
         area1 = SiEPIC.utils.advance_iterator(cell.each_shape(
             cell.layout().layer(TECHNOLOGY['Waveguide']))).polygon.area()
@@ -379,6 +425,12 @@ def waveguide_length_diff():
             array = np.asarray(array)
             idx = (np.abs(array - value)).argmin()
             return array[idx]
+
+        def distance(a,b):
+                return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+        
+        def is_between(a,c,b):
+                return distance(a,c) + distance(c,b) == distance(a,b)
 
         #location function to get correlation values
         def get_local_correlation_matrix(corr_length, resolution, temp_comp):
@@ -476,27 +528,49 @@ def waveguide_length_diff():
                                 else:
                                   wg_pts.append([[each.center.x*dbu, each.center.y*dbu]])
 
-                              new_wg_pts = []
-                              for each in wg_pts:
-                                if(len(each)>1):
-                                   new_wg_pts.append(split_line(each, resolution))
-                                else:
-                                   new_wg_pts.append(each)
-                              #print('new wg points', len(new_wg_pts))
-                              inner_corr_matrix = np.zeros(shape=(len(new_wg_pts[0]),len(new_wg_pts[1])))
-                              #print('inner corr matrix', inner_corr_matrix.shape)
-                              for i in range(len(new_wg_pts[0])):
-                                for j in range(len(new_wg_pts[1])):
-                                  inner_corr_value = get_corr(new_wg_pts[0][i][0], new_wg_pts[0][i][1], new_wg_pts[1][j][0],new_wg_pts[1][j][1], corr_length)
 
-                                  inner_corr_matrix[i,j] = inner_corr_value
-                              #np.savetxt('test.txt', inner_corr_matrix)
-                              corr_value = inner_corr_matrix.mean()
-                              full_matrix_data.append([idx1, idx2, inner_corr_matrix])
-
+                              #check if coincidental
+                              coincidental = []
+                              
+                              if(second.basic_name == 'Waveguide'):
+                                for pt_idx1 in range(len(wg_pts[0])):
+                                  for pt_idx2 in range(1,len(wg_pts[1])):
+                                    if(is_between(wg_pts[1][pt_idx2-1], wg_pts[0][pt_idx1], wg_pts[1][pt_idx2])):
+                                          coincidental.append(1)
+                                    else:
+                                      coincidental.append(0)
+                              else:
+                                for pt_idx2 in range(len(wg_pts[1])):
+                                  for pt_idx1 in range(1,len(wg_pts[0])):
+                                    if(is_between(wg_pts[0][pt_idx1-1], wg_pts[1][pt_idx2], wg_pts[0][pt_idx1])):
+                                          coincidental.append(1)
+                                    else:
+                                      coincidental.append(0)                              
+                              if(min(coincidental)==1):
+                                corr_value = (1-1e-15)
+                                
+                              else:
+                                new_wg_pts = []
+                                for each in wg_pts:
+                                  if(len(each)>1):
+                                     new_wg_pts.append(split_line(each, resolution))
+                                  else:
+                                     new_wg_pts.append(each)
+                                #print('new wg points', len(new_wg_pts))
+                                inner_corr_matrix = np.zeros(shape=(len(new_wg_pts[0]),len(new_wg_pts[1])))
+                                #print('inner corr matrix', inner_corr_matrix.shape)
+                                for i in range(len(new_wg_pts[0])):
+                                  for j in range(len(new_wg_pts[1])):
+                                    inner_corr_value = get_corr(new_wg_pts[0][i][0], new_wg_pts[0][i][1], new_wg_pts[1][j][0],new_wg_pts[1][j][1], corr_length)
+  
+                                    inner_corr_matrix[i,j] = inner_corr_value
+                                #np.savetxt('test.txt', inner_corr_matrix)
+                                corr_value = inner_corr_matrix.mean()
+                                full_matrix_data.append([idx1, idx2, inner_corr_matrix])
+  
                             else:
-                              corr_value = get_corr(first.center.x*dbu, first.center.y*dbu, second.center.x*dbu, second.center.y*dbu, corr_length)
-                              full_matrix_data.append([idx1, idx2, corr_value])
+                                corr_value = get_corr(first.center.x*dbu, first.center.y*dbu, second.center.x*dbu, second.center.y*dbu, corr_length)
+                                full_matrix_data.append([idx1, idx2, corr_value])
 
                         corr_matrix[idx1, idx2] = corr_matrix[idx2, idx1] = corr_value
                         s2i = comp[idx1].basic_name+"_" +str(idx1)+ " & " + comp[idx2].basic_name+"_"+str(idx2)
@@ -521,13 +595,14 @@ def waveguide_length_diff():
                 [paths.append(os.path.join(root, filename))
                  for filename in fnmatch.filter(filenames, 'MONTECARLO.xml') if tech_name in root]
             if paths:
+                print(paths[0])
                 with open(paths[0], 'r') as file:
                     montecarlo = xml_to_dict(file.read())
                     montecarlo = montecarlo['technologies']['technology']
                     if len(montecarlo) >1:
                       montecarlo = montecarlo[0]
 
-        #
+
 
         nsamples = 10000
         lambda_not  = 1.55
@@ -565,7 +640,12 @@ def waveguide_length_diff():
 
 
           #load neff data
-          geovsneff_data = np.load('geo_vs_neff.npy').flatten()[0]
+          filename = 'geo_vs_neff.npy'
+          pathsdata = [each for each in os.walk(pya.Application.instance().application_data_path(), followlinks=True)]
+          match = [each for each in pathsdata if (len(each)==3) and (filename in each[-1]) ]
+          filedir = match[0][0]
+          import os
+          geovsneff_data = np.load(os.path.join(filedir, filename)).flatten()[0]
           neff_data = geovsneff_data['neff']
           width_data = geovsneff_data['width']
           thickness_data = geovsneff_data['thickness']
@@ -598,12 +678,11 @@ def waveguide_length_diff():
         #
 
         pya.MessageBox.warning("Waveguide Length Difference", "Difference in waveguide lengths (um): %s" % str(
-            abs(area1 / width1 - area2 / width2) * cell.layout().dbu) + '\r\n RMS phase error:'+ str(round(np.std(phase_arr),2))+' pi radians', pya.MessageBox.Ok)
+            abs(area1 / width1 - area2 / width2) * cell.layout().dbu) + '\r\n RMS phase error: '+ str(round(np.std(phase_arr),3))+' pi radians', pya.MessageBox.Ok)
 
     else:
         pya.MessageBox.warning("Selection are not a waveguides",
                                "Select two waveguides you wish to measure.", pya.MessageBox.Ok)
-
 
 def waveguide_heal():
     print("waveguide_heal")
@@ -1019,9 +1098,9 @@ def auto_coord_extract():
 
     def gen_ui():
         global wdg
-        if 'wdg' in globals():
-            if wdg is not None and not wdg.destroyed:
-                wdg.destroy()
+#        if 'wdg' in globals():
+#            if wdg is not None and not wdg.destroyed:
+#                wdg.destroy()
         global wtext
 
         def button_clicked(checked):
@@ -1030,7 +1109,8 @@ def auto_coord_extract():
 
         wdg = pya.QDialog(pya.Application.instance().main_window())
 
-        wdg.setAttribute(pya.Qt.WA_DeleteOnClose)
+#        wdg.setAttribute(pya.Qt.WA_DeleteOnClose)
+        wdg.setAttribute=pya.Qt.WA_DeleteOnClose
         wdg.setWindowTitle("SiEPIC-Tools: Automated measurement coordinate extraction")
 
         wdg.resize(1000, 500)
@@ -1926,7 +2006,7 @@ def resize_waveguide():
 
         path_obj = c.pcell_parameters_by_name()['path']
 
-        if(path_obj.points <= 2):
+        if(path_obj.points <= 3):
             v = pya.MessageBox.warning(
                 "Message", "Cannot perform this operation on the selected cell/path.\n Hint: Select a cell/path with more than 2 vertices.", pya.MessageBox.Ok)
 
@@ -2011,7 +2091,8 @@ def resize_waveguide():
             global wdg, hbox, lframe1, titlefont, lf1title, parameters, lf1label1, lf1label2, lf1label3, lf1title2, lf1text3, lf1form, lframe1, leftsplitter, splitter1, container, ok
             wdg = QWidget()
             #wdg = QDialog(pya.Application.instance().main_window())
-            wdg.setAttribute(pya.Qt.WA_DeleteOnClose)
+#            wdg.setAttribute(pya.Qt.WA_DeleteOnClose)
+            wdg.setAttribute=pya.Qt.WA_DeleteOnClose
             wdg.setWindowTitle("Waveguide resizer")
 
             if sys.platform.startswith('linux'):
@@ -2127,10 +2208,12 @@ def resize_waveguide():
         #  lf1form.addWidget(lf1text2, 5,1)
             lf1form.addWidget(ok, 7, 1)
             lframe1.setLayout(lf1form)
-            leftsplitter = QSplitter(Qt.Vertical)
+            leftsplitter = QSplitter()
+            leftsplitter.setOrientation=Qt.Vertical
             leftsplitter.addWidget(lframe1)
             leftsplitter.setSizes([500, 400, 10])
-            splitter1 = QSplitter(Qt.Horizontal)
+            splitter1 = QSplitter()
+            splitter1.setOrientation=Qt.Horizontal
             textedit = QTextEdit()
             splitter1.addWidget(leftsplitter)
             splitter1.setSizes([400, 500])
