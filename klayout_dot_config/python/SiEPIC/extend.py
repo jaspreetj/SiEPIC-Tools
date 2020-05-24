@@ -43,9 +43,11 @@ pya.Cell Extensions:
   - get_LumericalINTERCONNECT_analyzers_from_opt_in
   - spice_netlist_export
   - check_component_models
+  - pinPoint
 
 pya.Instance Extensions:
   - find_pins: find Pin objects for all pins in a cell instance
+  - pinPoint
 
 pya.Point Extensions:
   - to_dtype(dbu): for KLayout < 0.25, convert integer Point using dbu to float DPoint
@@ -138,15 +140,19 @@ def radius_check(self, radius):
     else:
       return True
 
-# remove all but 1 colinear point
-
-
+# remove all colinear points (only keep corners)
 def remove_colinear_points(self):
     from .utils import pt_intersects_segment
     if self.__class__ == pya.Path:
         pts = self.get_points()
     else:
         pts = self.get_dpoints()
+
+    for i in range(1,len(pts)-1):
+      turn = ((angle_b_vectors(pts[i]-pts[i-1],pts[i+1]-pts[i])+90)%360-90)/90
+      angle = angle_vector(pts[i]-pts[i-1])/90
+      print('%s, %s' %(turn, angle))
+
 
     # this version removed all colinear points, which doesn't make sense for a path
     self.points = [pts[0]] + [pts[i]
@@ -1491,6 +1497,14 @@ def check_components_models():
         v = pya.MessageBox.warning(
             "All ok", "All components have models. Ok to simulate the circuit.", pya.MessageBox.Ok)
 
+# find the Pin's Point, whose name matches the input, for the given Cell
+def pinPoint(self, pin_name, verbose=False):
+    pins = self.find_pins()
+    if pins:
+        return [p for p in pins if (p.pin_name==pin_name)][0].center
+    else:
+        pass
+
 
 #################################################################################
 
@@ -1503,6 +1517,8 @@ pya.Cell.identify_nets = identify_nets
 pya.Cell.get_LumericalINTERCONNECT_analyzers = get_LumericalINTERCONNECT_analyzers
 pya.Cell.get_LumericalINTERCONNECT_analyzers_from_opt_in = get_LumericalINTERCONNECT_analyzers_from_opt_in
 pya.Cell.spice_netlist_export = spice_netlist_export
+pya.Cell.pinPoint = pinPoint
+
 
 #################################################################################
 #                    SiEPIC Class Extension of Instance Class                   #
@@ -1511,16 +1527,26 @@ pya.Cell.spice_netlist_export = spice_netlist_export
 # Function Definitions
 #################################################################################
 
-
+# find the Pins associated with the Instance:
 def find_pins(self, verbose=False):
     if verbose:
         print("Instance.find_pins, self: %s" % self)
         print("Instance.find_pins, cplx_trans: %s" % self.cplx_trans)
     return [pin.transform(self.cplx_trans) for pin in self.cell.find_pins(verbose)]
 
+# find the Pin's Point, whose name matches the input, for the given Instance
+def pinPoint(self, pin_name, verbose=False):
+    pins = self.find_pins()
+    if pins:
+        return [p for p in pins if (p.pin_name==pin_name)][0].center
+    else:
+        pass
+
+
 #################################################################################
 
 pya.Instance.find_pins = find_pins
+pya.Instance.pinPoint = pinPoint
 
 
 #################################################################################
